@@ -1,6 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
-import re  # 🚨 추가됨: 텍스트 자동 교정을 위한 도구
+import re
 
 # 1. 페이지 설정
 st.set_page_config(page_title="AI 주식 분석 리포트", layout="wide")
@@ -58,14 +58,12 @@ st.markdown("""
 # 3. 화면 UI
 st.markdown('<div class="title-text">AI 주식 분석 리포트 📈</div>', unsafe_allow_html=True)
 
-# 🚨 수정: 사이드바 대신 중앙 비밀번호 입력창 사용 (더 깔끔함)
-# 만약 Secrets에 키가 있으면 그걸 쓰고, 없으면 화면에서 입력받음
+# API 키 처리 로직
 api_key = st.secrets.get("GEMINI_API_KEY", None)
 
 with st.form(key='search_form'):
-    # 키가 없을 때만 입력창 보여주기
     if not api_key:
-        api_key_input = st.text_input("🔑 Google API Key 입력 (입력해야 작동합니다)", type="password")
+        api_key_input = st.text_input("🔑 Google API Key 입력", type="password")
     
     ticker = st.text_input("ticker_input", placeholder="종목명 입력 후 엔터 (예: 삼성전자, 테슬라)", label_visibility="collapsed")
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -74,18 +72,16 @@ with st.form(key='search_form'):
 
 # 4. 분석 로직
 if analyze_button:
-    # 사용자가 입력한 키가 있으면 그걸 사용
     if not api_key and 'api_key_input' in locals():
         api_key = api_key_input
 
     if not api_key:
-        st.warning("⚠️ API 키가 필요합니다. 설정 파일에 추가하거나 화면에 입력해주세요.")
+        st.warning("⚠️ API 키가 필요합니다.")
         st.stop()
 
     if ticker:
         try:
             genai.configure(api_key=api_key)
-            
             available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
             target_model = next((m for m in available_models if 'flash' in m), available_models[0])
             model = genai.GenerativeModel(target_model)
@@ -112,8 +108,6 @@ if analyze_button:
                 10. 밸류에이션 (가격 수치 제외)
                 11. 기술적 분석 (가격 수치 제외)
                 12. 최종 결론
-
-                위 규칙을 지켜서 출력해줘.
                 """
 
                 response = model.generate_content(
@@ -124,11 +118,7 @@ if analyze_button:
                     )
                 )
                 
-                # 🚨 핵심 기능 추가: AI가 줄바꿈을 빼먹었을 때 강제로 고치는 마법의 코드
                 final_text = response.text
-                
-                # 패턴: "### 숫자. 제목 * 내용" 처럼 한 줄에 붙어있는 경우를 찾아서
-                # "### 숫자. 제목 (엔터엔터) * 내용" 으로 강제 변경
                 final_text = re.sub(r"(### \d+\..+?)(\s+\*)", r"\1\n\n*", final_text)
 
                 st.markdown("---")
@@ -143,19 +133,18 @@ if analyze_button:
                     </div>
                 """, unsafe_allow_html=True)
 
-    except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg:
-            st.markdown("""
-                <div class="wait-box">
-                    <h3>🚦 접속자가 많아 분석이 지연되고 있습니다!</h3>
-                    <p>현재 너무 많은 요청이 몰려 AI가 잠시 숨을 고르고 있습니다.<br>
-                    <strong>약 1분 뒤에 다시 시도해 주시면 감사하겠습니다. 🙏</strong></p>
-                    <p style="font-size: 0.9rem !important; color: #AAA !important; margin-top: 10px;">(Error Code: 429 Quota Exceeded)</p>
-                </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.error(f"❌ 에러 발생: {error_msg}")
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg:
+                st.markdown("""
+                    <div class="wait-box">
+                        <h3>🚦 접속자가 많아 분석이 지연되고 있습니다!</h3>
+                        <p>현재 너무 많은 요청이 몰려 AI가 잠시 숨을 고르고 있습니다.<br>
+                        <strong>약 1분 뒤에 다시 시도해 주시면 감사하겠습니다. 🙏</strong></p>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.error(f"❌ 에러 발생: {error_msg}")
 
-elif analyze_button and not ticker:
-    st.warning("⚠️ 종목명을 입력해주세요.")
+    elif not ticker:
+        st.warning("⚠️ 종목명을 입력해주세요.")
