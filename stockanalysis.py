@@ -5,12 +5,18 @@ import re
 # 1. 페이지 설정
 st.set_page_config(page_title="AI 주식 분석 리포트", layout="wide")
 
-# 2. 디자인 CSS (글씨 크기 및 스타일 강제 통일)
+# 2. 디자인 CSS (글씨 크기 및 스타일 강제 통일 + 🚨 상단 메뉴 숨기기 추가)
 st.markdown("""
     <style>
     /* 전체 배경 및 기본 폰트 색상 */
     html, body, [data-testid="stAppViewContainer"] { background-color: #0E1117 !important; }
     h1, h2, h3, h4, h5, h6, p, span, div, label, li, .stMarkdown { color: #FFFFFF !important; }
+    
+    /* 🚨 핵심: 상단 헤더(Fork, GitHub, 메뉴) 숨기기 */
+    header {visibility: hidden;}
+    
+    /* 🚨 핵심: 하단 푸터(Made with Streamlit) 숨기기 */
+    footer {visibility: hidden;}
     
     /* 앱 제목 스타일 */
     .title-text { text-align: center; font-size: 3.0rem !important; font-weight: 800; padding-top: 30px; margin-bottom: 20px; }
@@ -58,7 +64,7 @@ st.markdown("""
 # 3. 화면 UI
 st.markdown('<div class="title-text">AI 주식 분석 리포트 📈</div>', unsafe_allow_html=True)
 
-# API 키 처리 로직
+# (이하 코드는 기존과 동일)
 api_key = st.secrets.get("GEMINI_API_KEY", None)
 
 with st.form(key='search_form'):
@@ -70,7 +76,6 @@ with st.form(key='search_form'):
     with col2:
         analyze_button = st.form_submit_button("🔍 분석 시작", type="primary", use_container_width=True)
 
-# 4. 분석 로직
 if analyze_button:
     if not api_key and 'api_key_input' in locals():
         api_key = api_key_input
