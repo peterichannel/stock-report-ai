@@ -1,5 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
+import re  # 🚨 추가됨: 텍스트 자동 교정을 위한 도구
 
 # 1. 페이지 설정
 st.set_page_config(page_title="AI 주식 분석 리포트", layout="wide")
@@ -57,78 +58,90 @@ st.markdown("""
 # 3. 화면 UI
 st.markdown('<div class="title-text">AI 주식 분석 리포트 📈</div>', unsafe_allow_html=True)
 
+# 🚨 수정: 사이드바 대신 중앙 비밀번호 입력창 사용 (더 깔끔함)
+# 만약 Secrets에 키가 있으면 그걸 쓰고, 없으면 화면에서 입력받음
+api_key = st.secrets.get("GEMINI_API_KEY", None)
+
 with st.form(key='search_form'):
+    # 키가 없을 때만 입력창 보여주기
+    if not api_key:
+        api_key_input = st.text_input("🔑 Google API Key 입력 (입력해야 작동합니다)", type="password")
+    
     ticker = st.text_input("ticker_input", placeholder="종목명 입력 후 엔터 (예: 삼성전자, 테슬라)", label_visibility="collapsed")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         analyze_button = st.form_submit_button("🔍 분석 시작", type="primary", use_container_width=True)
 
 # 4. 분석 로직
-if analyze_button and ticker:
-    try:
-        gemini_key = st.secrets["GEMINI_API_KEY"]
-        genai.configure(api_key=gemini_key)
-        
-        # 모델 자동 선택
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        target_model = next((m for m in available_models if 'flash' in m), available_models[0])
-        model = genai.GenerativeModel(target_model)
-        
-        with st.spinner(f"🤖 AI가 {ticker} 핵심 요약 리포트를 작성 중입니다..."):
-            # 🚀 핵심 수정: 제목과 내용 사이에 줄바꿈(Enter)을 강제하는 명령 추가
-            prompt = f"""
-            주식 애널리스트로서 '{ticker}'에 대한 '1페이지 핵심 요약 보고서'를 작성하라.
-            
-            **[디자인 및 형식 규칙 - 엄수]**
-            1. **목차 제목:** 모든 12개 목차 앞에는 반드시 '### ' (헤더3)를 붙여라. 
-            2. **줄바꿈 필수:** 제목(### ...)을 쓴 뒤에는 **반드시 줄을 바꾸고(Enter)** 내용을 시작하라. 
-               (절대 제목과 내용을 같은 줄에 쓰지 말 것!)
-               * 나쁜 예: ### 1. 기업 개요 * 반도체 기업임... (X)
-               * 좋은 예: 
-                 ### 1. 기업 개요
-                 * 반도체 기업임... (O)
-            3. **본문:** 무조건 '불렛 포인트(•)' 리스트로 작성하라.
-            4. **어조:** "~함", "~임" 체로 간결하게.
-            
-            **[내용 작성 시 주의사항]**
-            * 실시간 가격(숫자)은 틀릴 수 있으므로 절대 쓰지 말고, 추세와 패턴 위주로만 분석할 것.
-            
-            **[필수 목차 (12개)]**
-            1. 기업 개요
-            2. CEO
-            3. 주주 구성
-            4. 사업 비중
-            5. 산업 전망
-            6. 경쟁 구도
-            7. 경제적 해자
-            8. 리스크 요인
-            9. 재무 현황
-            10. 밸류에이션 (가격 수치 제외)
-            11. 기술적 분석 (가격 수치 제외)
-            12. 최종 결론
+if analyze_button:
+    # 사용자가 입력한 키가 있으면 그걸 사용
+    if not api_key and 'api_key_input' in locals():
+        api_key = api_key_input
 
-            위 규칙을 완벽하게 지켜서 출력해줘.
-            """
+    if not api_key:
+        st.warning("⚠️ API 키가 필요합니다. 설정 파일에 추가하거나 화면에 입력해주세요.")
+        st.stop()
 
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.5,
-                    max_output_tokens=8192, 
+    if ticker:
+        try:
+            genai.configure(api_key=api_key)
+            
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            target_model = next((m for m in available_models if 'flash' in m), available_models[0])
+            model = genai.GenerativeModel(target_model)
+            
+            with st.spinner(f"🤖 AI가 {ticker} 핵심 요약 리포트를 작성 중입니다..."):
+                prompt = f"""
+                주식 애널리스트로서 '{ticker}'에 대한 '1페이지 핵심 요약 보고서'를 작성하라.
+                
+                **[디자인 및 형식 규칙 - 엄수]**
+                1. **목차 제목:** 모든 12개 목차 앞에는 반드시 '### ' (헤더3)를 붙여라. 
+                2. **본문:** 무조건 '불렛 포인트(•)' 리스트로 작성하라.
+                3. **어조:** "~함", "~임" 체로 간결하게.
+                
+                **[필수 목차 (12개)]**
+                1. 기업 개요
+                2. CEO
+                3. 주주 구성
+                4. 사업 비중
+                5. 산업 전망
+                6. 경쟁 구도
+                7. 경제적 해자
+                8. 리스크 요인
+                9. 재무 현황
+                10. 밸류에이션 (가격 수치 제외)
+                11. 기술적 분석 (가격 수치 제외)
+                12. 최종 결론
+
+                위 규칙을 지켜서 출력해줘.
+                """
+
+                response = model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.5,
+                        max_output_tokens=8192, 
+                    )
                 )
-            )
-            
-            st.markdown("---")
-            st.markdown(f"## 📊 {ticker} 핵심 투자 요약")
-            st.markdown(f'<div class="report-text">{response.text}</div>', unsafe_allow_html=True)
-            
-            st.markdown("""
-                <div class="disclaimer-box">
-                    <p>⚠️ <strong>투자 유의사항</strong><br>
-                    이 리포트는 AI가 학습된 데이터를 바탕으로 생성하므로, 실시간 정보와 차이가 있을 수 있습니다.<br>
-                    <strong>투자의 책임은 전적으로 본인에게 있습니다.</strong></p>
-                </div>
-            """, unsafe_allow_html=True)
+                
+                # 🚨 핵심 기능 추가: AI가 줄바꿈을 빼먹었을 때 강제로 고치는 마법의 코드
+                final_text = response.text
+                
+                # 패턴: "### 숫자. 제목 * 내용" 처럼 한 줄에 붙어있는 경우를 찾아서
+                # "### 숫자. 제목 (엔터엔터) * 내용" 으로 강제 변경
+                final_text = re.sub(r"(### \d+\..+?)(\s+\*)", r"\1\n\n*", final_text)
+
+                st.markdown("---")
+                st.markdown(f"## 📊 {ticker} 핵심 투자 요약")
+                st.markdown(f'<div class="report-text">{final_text}</div>', unsafe_allow_html=True)
+                
+                st.markdown("""
+                    <div class="disclaimer-box">
+                        <p>⚠️ <strong>투자 유의사항</strong><br>
+                        이 리포트는 AI가 학습된 데이터를 바탕으로 생성하므로, 실시간 정보와 차이가 있을 수 있습니다.<br>
+                        <strong>투자의 책임은 전적으로 본인에게 있습니다.</strong></p>
+                    </div>
+                """, unsafe_allow_html=True)
 
     except Exception as e:
         error_msg = str(e)
