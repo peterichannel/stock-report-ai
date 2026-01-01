@@ -1,155 +1,135 @@
 import streamlit as st
 import google.generativeai as genai
 import re
+import textwrap
 
 # 1. 페이지 설정
-st.set_page_config(page_title="AI 주식 분석 리포트", layout="wide")
+st.set_page_config(page_title="AI 종목 분석기", page_icon="📈", layout="wide")
 
-# 2. 디자인 CSS (글씨 크기 및 스타일 강제 통일 + 🚨 상단 메뉴 숨기기 추가)
-st.markdown("""
+# 2. CSS 스타일 (왼쪽 벽에 밀착)
+st.markdown(textwrap.dedent("""
     <style>
-    /* 전체 배경 및 기본 폰트 색상 */
-    html, body, [data-testid="stAppViewContainer"] { background-color: #0E1117 !important; }
-    h1, h2, h3, h4, h5, h6, p, span, div, label, li, .stMarkdown { color: #FFFFFF !important; }
+    .stApp { background-color: #020617 !important; }
+    h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown { color: #f1f5f9 !important; font-family: sans-serif !important; }
     
-    /* 🚨 핵심: 상단 헤더(Fork, GitHub, 메뉴) 숨기기 */
-    header {visibility: hidden;}
+    /* 네비게이션 바 */
+    .navbar { display: flex; align-items: center; padding: 1rem 0; border-bottom: 1px solid #1e293b; margin-bottom: 3rem; }
+    .nav-logo { width: 36px; height: 36px; background: linear-gradient(to bottom, #334155, #0f172a); border: 1px solid #475569; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: white; margin-right: 1rem; cursor: pointer; text-decoration: none; }
+    .nav-title { font-size: 1.125rem; font-weight: 500; color: #94a3b8; border-left: 1px solid #334155; padding-left: 1rem; cursor: pointer; }
     
-    /* 🚨 핵심: 하단 푸터(Made with Streamlit) 숨기기 */
-    footer {visibility: hidden;}
+    /* 검색창 & 버튼 */
+    div[data-testid="stTextInput"] input { background-color: #0f172a !important; border: 1px solid #334155 !important; color: white !important; border-radius: 0.75rem !important; height: 3.5rem !important; }
+    div[data-testid="stFormSubmitButton"] button { background-color: #2563eb !important; color: white !important; border: none !important; border-radius: 0.5rem !important; height: 3.5rem !important; width: 100% !important; }
     
-    /* 앱 제목 스타일 */
-    .title-text { text-align: center; font-size: 3.0rem !important; font-weight: 800; padding-top: 30px; margin-bottom: 20px; }
+    /* 뉴스레터 카드 (수정됨) */
+    .newsletter-card { background-color: #0f172a; border: 1px solid #1e293b; border-radius: 1rem; padding: 1.25rem; display: flex; align-items: center; gap: 1.25rem; text-decoration: none !important; margin-top: 2rem; }
+    .newsletter-card:hover { background-color: #1e293b; border-color: #334155; }
     
-    /* 입력창 및 버튼 스타일 */
-    div[data-testid="stTextInput"] input { 
-        text-align: center !important; font-size: 1.2rem !important; height: 50px !important;
-        background-color: #262730 !important; color: white !important; 
-    }
-    button[kind="primary"] { 
-        width: 100% !important; height: 50px !important; font-size: 1.3rem !important; 
-        background-color: #FF4B4B !important; font-weight: bold !important; 
-    }
+    /* 로고 & 텍스트 스타일 */
+    .logo-m { width: 4rem; height: 4rem; background-color: #355e3b; border-radius: 0.75rem; display: flex; align-items: center; justify-content: center; font-family: serif; font-size: 2.25rem; color: white; font-style: italic; flex-shrink: 0; }
     
-    /* --- 리포트 본문 스타일 완벽 고정 --- */
-    .report-text h3 {
-        color: #4A9EFF !important; font-size: 1.5rem !important; font-weight: 700 !important;
-        margin-top: 30px !important; margin-bottom: 15px !important;
-        border-bottom: 1px solid #333; padding-bottom: 5px; line-height: 1.4 !important;
-    }
-    .report-text p, .report-text li {
-        font-size: 1.15rem !important; line-height: 1.8 !important; color: #E2E8F0 !important;
-        margin-bottom: 8px !important;
-    }
-    .report-text strong { color: #FFD700 !important; font-weight: 700 !important; }
-    .report-text ul { margin-left: 20px !important; padding-left: 0px !important; }
+    /* 🚨 핵심 수정: 제목 줄바꿈 금지 (nowrap) 추가 */
+    .card-text h3 { margin: 0; font-size: 1.125rem; font-weight: 700; color: #e2e8f0; white-space: nowrap; }
+    .card-text p { margin: 0; font-size: 0.875rem; color: #64748b; margin-top: 0.25rem; }
+
+    /* 리포트 본문 스타일 */
+    .report-content h3 { color: #60a5fa !important; margin-top: 2.5rem !important; border-bottom: 1px solid #1e293b; }
     
-    /* 면책 조항 스타일 */
-    .disclaimer-box {
-        background-color: #1A1C24; border: 1px solid #444; border-radius: 8px;
-        padding: 15px; margin-top: 40px; text-align: center;
-    }
-    .disclaimer-box p, .disclaimer-box strong { font-size: 0.9rem !important; color: #888 !important; }
-    
-    /* 대기 안내 메시지 박스 스타일 */
-    .wait-box {
-        background-color: #2D3748; border: 2px solid #F6E05E; border-radius: 10px;
-        padding: 30px; text-align: center; margin-top: 20px;
-    }
-    .wait-box h3 { color: #F6E05E !important; font-size: 1.5rem !important; margin-bottom: 10px !important; }
-    .wait-box p { font-size: 1.2rem !important; color: white !important; }
+    /* 헤더/푸터 숨김 */
+    header, footer { visibility: hidden; }
     </style>
-""", unsafe_allow_html=True)
+"""), unsafe_allow_html=True)
 
-# 3. 화면 UI
-st.markdown('<div class="title-text">AI 주식 분석 리포트 📈</div>', unsafe_allow_html=True)
+# 3. 상태 관리
+if 'page_state' not in st.session_state: st.session_state.page_state = 'home'
+if 'report_data' not in st.session_state: st.session_state.report_data = ""
+if 'current_ticker' not in st.session_state: st.session_state.current_ticker = ""
 
-# (이하 코드는 기존과 동일)
-api_key = st.secrets.get("GEMINI_API_KEY", None)
+# 4. 네비게이션 바
+st.markdown(textwrap.dedent("""
+    <div class="navbar">
+        <a href="https://litt.ly/peterich" target="_blank" class="nav-logo">주피터</a>
+        <div class="nav-title" onclick="window.location.reload()">AI 종목 분석기</div>
+    </div>
+"""), unsafe_allow_html=True)
 
-with st.form(key='search_form'):
-    if not api_key:
-        api_key_input = st.text_input("🔑 Google API Key 입력", type="password")
-    
-    ticker = st.text_input("ticker_input", placeholder="종목명 입력 후 엔터 (예: 삼성전자, 테슬라)", label_visibility="collapsed")
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        analyze_button = st.form_submit_button("🔍 분석 시작", type="primary", use_container_width=True)
+# --- 분석 함수 ---
+def run_analysis(ticker_name):
+    api_key = st.secrets.get("GEMINI_API_KEY", None)
+    if not api_key: return "ERROR_KEY"
+    try:
+        genai.configure(api_key=api_key)
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        model_name = next((m for m in models if 'flash' in m), 'models/gemini-pro')
+        model = genai.GenerativeModel(model_name)
+        prompt = f"주식 애널리스트로서 '{ticker_name}'에 대한 핵심 요약 보고서를 작성하라. 목차는 '### '사용, 본문은 불렛포인트 사용. 필수목차: 1.기업개요 2.CEO 3.주주구성 4.사업비중 5.산업전망 6.경쟁구도 7.경제적해자 8.리스크 9.재무현황 10.밸류에이션 11.기술적분석 12.최종결론"
+        response = model.generate_content(prompt)
+        return re.sub(r"(### \d+\..+?)(\s+\*)", r"\1\n\n*", response.text)
+    except Exception as e:
+        return "ERROR_429" if "429" in str(e) else f"ERROR: {str(e)}"
 
-if analyze_button:
-    if not api_key and 'api_key_input' in locals():
-        api_key = api_key_input
+# --- 메인 화면 ---
+if st.session_state.page_state == 'home':
+    _, col_center, _ = st.columns([1, 6, 1])
+    with col_center:
+        st.markdown(textwrap.dedent("""
+            <h1 style='text-align: center; font-size: 3.5rem; font-weight: 800; margin-bottom: 0.5rem;'>
+                주식 분석을 <br><span style='color: #3b82f6;'>단 몇 초 만에</span>
+            </h1>
+            <p style='text-align: center; color: #94a3b8; font-size: 1.2rem; margin-bottom: 3rem;'>
+                종목명을 입력하면 종합 투자 보고서를 AI가 즉시 생성합니다.
+            </p>
+        """), unsafe_allow_html=True)
+        
+        with st.form("search_form"):
+            c1, c2 = st.columns([3, 1])
+            with c1: ticker_input = st.text_input("ticker", placeholder="예: 테슬라", label_visibility="collapsed")
+            with c2: submit = st.form_submit_button("🔍 분석 시작")
+        
+        if submit and ticker_input:
+            st.session_state.current_ticker = ticker_input
+            with st.spinner("분석 중..."):
+                res = run_analysis(ticker_input)
+                if res.startswith("ERROR"): st.error(res)
+                else:
+                    st.session_state.report_data = res
+                    st.session_state.page_state = 'report'
+                    st.rerun()
 
-    if not api_key:
-        st.warning("⚠️ API 키가 필요합니다.")
-        st.stop()
+        st.markdown(textwrap.dedent("""
+            <div style='display: flex; justify-content: center; gap: 10px; margin-top: 20px; color: #64748b;'>
+                <span>추천: 삼성전자</span><span>추천: 테슬라</span><span>추천: 엔비디아</span>
+            </div>
+        """), unsafe_allow_html=True)
 
-    if ticker:
-        try:
-            genai.configure(api_key=api_key)
-            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            target_model = next((m for m in available_models if 'flash' in m), available_models[0])
-            model = genai.GenerativeModel(target_model)
-            
-            with st.spinner(f"🤖 AI가 {ticker} 핵심 요약 리포트를 작성 중입니다..."):
-                prompt = f"""
-                주식 애널리스트로서 '{ticker}'에 대한 '1페이지 핵심 요약 보고서'를 작성하라.
-                
-                **[디자인 및 형식 규칙 - 엄수]**
-                1. **목차 제목:** 모든 12개 목차 앞에는 반드시 '### ' (헤더3)를 붙여라. 
-                2. **본문:** 무조건 '불렛 포인트(•)' 리스트로 작성하라.
-                3. **어조:** "~함", "~임" 체로 간결하게.
-                
-                **[필수 목차 (12개)]**
-                1. 기업 개요
-                2. CEO
-                3. 주주 구성
-                4. 사업 비중
-                5. 산업 전망
-                6. 경쟁 구도
-                7. 경제적 해자
-                8. 리스크 요인
-                9. 재무 현황
-                10. 밸류에이션 (가격 수치 제외)
-                11. 기술적 분석 (가격 수치 제외)
-                12. 최종 결론
-                """
-
-                response = model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.5,
-                        max_output_tokens=8192, 
-                    )
-                )
-                
-                final_text = response.text
-                final_text = re.sub(r"(### \d+\..+?)(\s+\*)", r"\1\n\n*", final_text)
-
-                st.markdown("---")
-                st.markdown(f"## 📊 {ticker} 핵심 투자 요약")
-                st.markdown(f'<div class="report-text">{final_text}</div>', unsafe_allow_html=True)
-                
-                st.markdown("""
-                    <div class="disclaimer-box">
-                        <p>⚠️ <strong>투자 유의사항</strong><br>
-                        이 리포트는 AI가 학습된 데이터를 바탕으로 생성하므로, 실시간 정보와 차이가 있을 수 있습니다.<br>
-                        <strong>투자의 책임은 전적으로 본인에게 있습니다.</strong></p>
+        # 🚨 핵심 수정: max-width를 400px -> 600px로 변경하여 공간 확보
+        st.markdown(textwrap.dedent("""
+            <div style='margin-top: 6rem; text-align: center;'>
+                <a href="https://litt.ly/peterich" target="_blank" style="text-decoration: none;">
+                    <div style='width: 100px; height: 100px; background: linear-gradient(to bottom, #1e293b, #000); border-radius: 30px; margin: 0 auto 20px auto; border: 1px solid #334155; display: flex; align-items: center; justify-content: center;'>
+                        <span style='font-size: 1.5rem; font-weight: 800; color: white;'>주피터</span>
                     </div>
-                """, unsafe_allow_html=True)
-
-        except Exception as e:
-            error_msg = str(e)
-            if "429" in error_msg:
-                st.markdown("""
-                    <div class="wait-box">
-                        <h3>🚦 접속자가 많아 분석이 지연되고 있습니다!</h3>
-                        <p>현재 너무 많은 요청이 몰려 AI가 잠시 숨을 고르고 있습니다.<br>
-                        <strong>약 1분 뒤에 다시 시도해 주시면 감사하겠습니다. 🙏</strong></p>
+                </a>
+                <h2 style='font-size: 1.5rem; margin-bottom: 0.5rem;'>주식하는 피터</h2>
+                <p style='color: #94a3b8; line-height: 1.6;'>
+                    불안함이 확신이 될 수 있도록<br>연 20% 수익의 현실적인 '생존투자'<br>주식 초보만을 위한 무료 뉴스레터 구독 👇
+                </p>
+                <a href="https://tally.so/r/GxKGXe" target="_blank" class="newsletter-card" style='max-width: 600px; margin: 2rem auto 0 auto;'>
+                    <div class="logo-m">m</div>
+                    <div class="card-text" style='text-align: left;'>
+                        <h3>주식하는 피터의 뉴스레터</h3>
+                        <p>(매주 월요일 새벽 발송)</p>
                     </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.error(f"❌ 에러 발생: {error_msg}")
+                </a>
+            </div>
+        """), unsafe_allow_html=True)
 
-    elif not ticker:
-        st.warning("⚠️ 종목명을 입력해주세요.")
+# --- 리포트 화면 ---
+elif st.session_state.page_state == 'report':
+    if st.button("← 돌아가기"):
+        st.session_state.page_state = 'home'
+        st.rerun()
+    st.markdown(f"# 📊 {st.session_state.current_ticker} 분석 리포트")
+    st.markdown("---")
+    st.markdown(textwrap.dedent(f"""<div class="report-content">{st.session_state.report_data}</div>"""), unsafe_allow_html=True)
+    st.markdown(textwrap.dedent("""<div style='background-color: #1e293b; padding: 20px; border-radius: 10px; margin-top: 50px; text-align: center; color: #94a3b8;'>⚠️ AI 생성 정보입니다. 투자 책임은 본인에게 있습니다.</div>"""), unsafe_allow_html=True)
